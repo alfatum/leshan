@@ -23,6 +23,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
+import java.util.Collection;
 import java.util.List;
 
 import javax.jmdns.JmDNS;
@@ -41,6 +42,7 @@ import org.eclipse.leshan.core.demo.LwM2mDemoConstant;
 import org.eclipse.leshan.core.demo.cli.ShortErrorMessageHandler;
 import org.eclipse.leshan.core.model.ObjectLoader;
 import org.eclipse.leshan.core.model.ObjectModel;
+import org.eclipse.leshan.core.observation.Observation;
 import org.eclipse.leshan.server.californium.LeshanServer;
 import org.eclipse.leshan.server.californium.LeshanServerBuilder;
 import org.eclipse.leshan.server.core.demo.json.servlet.SecurityServlet;
@@ -53,6 +55,9 @@ import org.eclipse.leshan.server.model.LwM2mModelProvider;
 import org.eclipse.leshan.server.model.VersionedModelProvider;
 import org.eclipse.leshan.server.redis.RedisRegistrationStore;
 import org.eclipse.leshan.server.redis.RedisSecurityStore;
+import org.eclipse.leshan.server.registration.Registration;
+import org.eclipse.leshan.server.registration.RegistrationListener;
+import org.eclipse.leshan.server.registration.RegistrationUpdate;
 import org.eclipse.leshan.server.security.EditableSecurityStore;
 import org.eclipse.leshan.server.security.FileSecurityStore;
 import org.slf4j.Logger;
@@ -74,7 +79,7 @@ public class LeshanServerDemo {
     private static final String CF_CONFIGURATION_FILENAME = "Californium3.server.properties";
     private static final String CF_CONFIGURATION_HEADER = "Leshan Server Demo - " + Configuration.DEFAULT_HEADER;
 
-    public static void main(String[] args) {
+    public static LeshanServer returnPreparedLwm2mServer(String[] args) {
 
         // Parse command line
         LeshanServerDemoCLI cli = new LeshanServerDemoCLI();
@@ -87,9 +92,28 @@ public class LeshanServerDemo {
         if (command.isUsageHelpRequested() || command.isVersionHelpRequested())
             System.exit(0);
 
+        LeshanServer lwm2mServer = null;
+
         try {
             // Create LWM2M Server
-            LeshanServer lwm2mServer = createLeshanServer(cli);
+            lwm2mServer = createLeshanServer(cli);
+
+            lwm2mServer.getRegistrationService().addListener(new RegistrationListener() {
+
+                public void registered(Registration registration, Registration previousReg,
+                        Collection<Observation> previousObsersations) {
+                    System.out.println("new device: " + registration.getEndpoint());
+                }
+
+                public void updated(RegistrationUpdate update, Registration updatedReg, Registration previousReg) {
+                    System.out.println("device is still here: " + updatedReg.getEndpoint());
+                }
+
+                public void unregistered(Registration registration, Collection<Observation> observations,
+                        boolean expired, Registration newReg) {
+                    System.out.println("device left: " + registration.getEndpoint());
+                }
+            });
 
             // Create Web Server
             Server webServer = createJettyServer(cli, lwm2mServer);
@@ -129,6 +153,8 @@ public class LeshanServerDemo {
             printer.flush();
             System.exit(1);
         }
+
+        return lwm2mServer;
     }
 
     public static LeshanServer createLeshanServer(LeshanServerDemoCLI cli) throws Exception {
